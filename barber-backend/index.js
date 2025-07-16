@@ -3,29 +3,30 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { doc, updateDoc } = require('firebase/firestore');
+const { db } = require('./firebase'); // Make sure this file exists and exports `db`
 
 const app = express();
 app.use(cors());
-// Add raw body support ONLY for the webhook
-app.use((req, res, next) => {
-  if (req.originalUrl === '/webhook') {
-    next(); // skip express.json()
-  } else {
-    express.json()(req, res, next);
-  }
-});
 
+// ✅ Raw body parsing ONLY for webhook — MUST come BEFORE express.json()
+app.post('/webhook', express.raw({ type: 'application/json' }));
 
+// ✅ JSON body parsing for all other routes
+app.use(express.json());
+
+// ✅ Test route to confirm server is up
 app.get('/', (req, res) => {
   res.send('Daril Barber Backend is running 🚀');
 });
 
+// ✅ Stripe Checkout session
 app.post('/create-checkout-session', async (req, res) => {
   try {
     const { slotId, time, customerName, customerPhone } = req.body;
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card','blik'],
+      payment_method_types: ['card', 'blik'],
       mode: 'payment',
       line_items: [{
         price_data: {
@@ -33,7 +34,7 @@ app.post('/create-checkout-session', async (req, res) => {
           product_data: {
             name: `Barber Slot: ${time}`,
           },
-          unit_amount: 4000, // ✅ 40.00 PLN
+          unit_amount: 4000, // 40.00 PLN
         },
         quantity: 1,
       }],
@@ -48,18 +49,15 @@ app.post('/create-checkout-session', async (req, res) => {
 
     res.json({ url: session.url });
   } catch (error) {
-    console.error("Stripe error:", error);
+    console.error("❌ Stripe error:", error);
     res.status(500).json({ error: 'Stripe session creation failed' });
   }
 });
 
-const { doc, updateDoc } = require('firebase/firestore');
-const { db } = require('./firebase'); // make sure you have this setup
-
+// ✅ Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-// Stripe needs the raw body for webhooks:
-app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+app.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
   let event;
@@ -70,6 +68,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // ✅ Handle successful payment
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const { slotId, customerName, customerPhone } = session.metadata;
@@ -91,5 +90,5 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   res.status(200).send();
 });
 
-
+// ✅ Start the server
 app.listen(4242, () => console.log('Server running on http://localhost:4242'));
