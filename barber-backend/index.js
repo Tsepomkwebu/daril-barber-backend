@@ -1,26 +1,28 @@
+// ✅ Load environment variables
 require('dotenv').config();
 
+// ✅ Import dependencies (CommonJS style)
 const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { doc, updateDoc } = require('firebase/firestore');
-const { db } = require('./firebase'); // Make sure this file exists and exports `db`
+const { db } = require('./firebase'); // Make sure this exports `db`
 
 const app = express();
-app.use(cors());
 
-// ✅ Raw body parsing ONLY for webhook — MUST come BEFORE express.json()
+// ✅ Stripe Webhook requires raw body BEFORE express.json()
 app.post('/webhook', express.raw({ type: 'application/json' }));
 
 // ✅ JSON body parsing for all other routes
 app.use(express.json());
+app.use(cors());
 
-// ✅ Test route to confirm server is up
+// ✅ Health check route
 app.get('/', (req, res) => {
   res.send('Daril Barber Backend is running 🚀');
 });
 
-// ✅ Stripe Checkout session
+// ✅ Stripe Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
   try {
     const { slotId, time, customerName, customerPhone } = req.body;
@@ -68,7 +70,6 @@ app.post('/webhook', async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // ✅ Handle successful payment
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const { slotId, customerName, customerPhone } = session.metadata;
@@ -90,5 +91,5 @@ app.post('/webhook', async (req, res) => {
   res.status(200).send();
 });
 
-// ✅ Start the server
+// ✅ Start server
 app.listen(4242, () => console.log('Server running on http://localhost:4242'));

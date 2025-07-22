@@ -1,13 +1,17 @@
-// barber-backend/firebase.js
-const admin = require('firebase-admin');
+// firebase.js
+import { initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
 
-// Load service account from local JSON file (make sure it's in .gitignore!)
-const serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
+};
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-const db = admin.firestore();
-
-module.exports = { db };
+export { db };
