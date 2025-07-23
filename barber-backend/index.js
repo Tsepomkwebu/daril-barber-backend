@@ -75,6 +75,9 @@ app.post('/webhook', async (req, res) => {
     const { slotId, customerName, customerPhone } = session.metadata;
 
     try {
+      console.log('🧪 db:', db);
+      console.log('🧪 slotId:', slotId);
+
       const slotRef = doc(db, 'slots', slotId);
       await updateDoc(slotRef, {
         status: 'booked',
