@@ -23,6 +23,7 @@ app.get('/', (req, res) => {
 });
 
 // ✅ Stripe Checkout Session
+// ✅ Stripe Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
   try {
     const { slotId, time, customerName, customerPhone } = req.body;
@@ -36,12 +37,12 @@ app.post('/create-checkout-session', async (req, res) => {
           product_data: {
             name: `Barber Slot: ${time}`,
           },
-          unit_amount: 4000, // 40.00 PLN
+          unit_amount: 4000,
         },
         quantity: 1,
       }],
       metadata: {
-        slotId: 'FWfv5A7jJINyLalSWT00',
+        slotId,
         customerName,
         customerPhone,
       },
@@ -55,6 +56,7 @@ app.post('/create-checkout-session', async (req, res) => {
     res.status(500).json({ error: 'Stripe session creation failed' });
   }
 });
+
 
 // ✅ Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -72,12 +74,14 @@ app.post('/webhook', async (req, res) => {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const { slotId, customerName, customerPhone } = session.metadata;
+    const { slotId, customerName, customerPhone } = session.metadata || {};
+
+    if (!slotId || !customerName || !customerPhone) {
+      console.error('❌ Missing metadata in Stripe session:', session.metadata);
+      return res.status(400).send('Missing metadata in Stripe session');
+    }
 
     try {
-      console.log('🧪 db:', db);
-      console.log('🧪 slotId:', slotId);
-
       const slotRef = doc(db, 'slots', slotId);
       await updateDoc(slotRef, {
         status: 'booked',
@@ -90,6 +94,7 @@ app.post('/webhook', async (req, res) => {
       console.error('❌ Firebase update failed:', error.message);
     }
   }
+
 
   res.status(200).send();
 });
