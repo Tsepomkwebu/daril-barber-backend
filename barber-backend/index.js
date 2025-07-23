@@ -41,7 +41,7 @@ app.post('/create-checkout-session', async (req, res) => {
         quantity: 1,
       }],
       metadata: {
-        slotId: 'FWfv5A7jJlNyLaISWT00',
+        slotId: 'FWfv5A7jJINyLalSWT00',
         customerName,
         customerPhone,
       },
