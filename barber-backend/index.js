@@ -5,8 +5,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const { doc, updateDoc } = require('firebase/firestore');
-const { db } = require('./firebase'); // Make sure this exports `db`
+const { db } = require('./firebase');
+const admin = require('firebase-admin');
 
 const app = express();
 
