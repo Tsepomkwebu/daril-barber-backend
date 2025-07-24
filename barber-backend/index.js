@@ -22,7 +22,7 @@ app.get('/', (req, res) => {
   res.send('Daril Barber Backend is running 🚀');
 });
 
-// ✅ Stripe Checkout Session
+
 // ✅ Stripe Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
   try {
@@ -57,6 +57,35 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
+// Cash booking endpoint
+app.post('/bookings', async (req, res) => {
+  try {
+    const { slotId, customerName, customerPhone, time, paymentType } = req.body;
+
+    if (!slotId || !customerName || !customerPhone || !paymentType) {
+      return res.status(400).json({ error: 'Missing booking data' });
+    }
+
+    // Reference the slot document
+    const slotRef = db.collection('slots').doc(slotId);
+
+    // Update it as booked
+    await slotRef.update({
+      status:       'booked',
+      customerName,
+      customerPhone,
+      paymentType,   // will be 'cash'
+      bookedAt:     admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Cash booking failed:', err);
+    return res.status(500).json({ error: 'Cash booking failed' });
+  }
+});
+
+
 
 // ✅ Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -82,13 +111,14 @@ app.post('/webhook', async (req, res) => {
     }
 
     try {
-      const slotRef = doc(db, 'slots', slotId);
-      await updateDoc(slotRef, {
+      const slotRef = db.collection('slots').doc(slotId);
+      await slotRef.update({
         status: 'booked',
         customerName,
         customerPhone,
         paymentType: 'card',
       });
+
       console.log(`✅ Booking confirmed for ${customerName}`);
     } catch (error) {
       console.error('❌ Firebase update failed:', error.message);
