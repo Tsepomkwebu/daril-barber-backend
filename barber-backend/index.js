@@ -9,8 +9,8 @@ const { db } = require('./firebase');
 const sgMail = require('@sendgrid/mail');
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-const FROM = process.env.EMAIL_FROM;
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const FROM         = process.env.EMAIL_FROM;
+const ADMIN_EMAIL  = process.env.ADMIN_EMAIL;
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
 const app = express();
@@ -27,16 +27,16 @@ app.get('/', (req, res) => {
   res.send('Daril Barber Backend is running 🚀');
 });
 
-// ✅ Create Checkout Session (card only, with customer_email & metadata)
+// ✅ Create Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
   try {
     const {
       slotId,
-      date,             // new!
+      date,
       time,
       customerName,
       customerPhone,
-      customerEmail,    // new!
+      customerEmail,   // optional
       serviceType,
       address,
       amount
@@ -45,31 +45,31 @@ app.post('/create-checkout-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card', 'blik'],
       mode: 'payment',
-      customer_email: customerEmail,  // stripe will email receipt here
+      customer_email: customerEmail,    // Stripe will collect if missing
       line_items: [{
         price_data: {
           currency: 'pln',
           product_data: {
             name: `Barber ${serviceType === 'inShop' ? 'In‑Shop' : 'At‑Home'} • ${date} @ ${time}`,
-            description: serviceType === 'atHome' ? `Address: ${address}` : undefined
+            description: serviceType === 'atHome' ? `Address: ${address}` : undefined,
           },
-          unit_amount: amount, // e.g. 5000 or 7000
+          unit_amount: amount,
         },
         quantity: 1,
       }],
       metadata: {
         slotId,
-        date,               // pass date/time into metadata
+        date,
         time,
         customerName,
         customerPhone,
-        customerEmail,      // pass through for SMS fallback
+        customerEmail,
         serviceType,
         address: address || '',
         amount: amount.toString()
       },
       success_url: `${FRONTEND_URL}/success`,
-      cancel_url: `${FRONTEND_URL}/cancel`,
+      cancel_url:  `${FRONTEND_URL}/cancel`,
     });
 
     res.json({ url: session.url });
@@ -100,59 +100,61 @@ app.post('/webhook', async (req, res) => {
       time,
       customerName,
       customerPhone,
-      customerEmail,
       serviceType,
-      address
+      address,
+      amount
     } = session.metadata || {};
 
-    // Validate
-    if (!slotId || !customerName || !customerPhone || !customerEmail) {
+    // Only require slotId, name, phone
+    if (!slotId || !customerName || !customerPhone) {
       console.error('❌ Missing metadata in Stripe session:', session.metadata);
       return res.status(400).send('Missing metadata in Stripe session');
     }
 
+    // Pick up the actual email Stripe collected, or fallback to metadata
+    const actualEmail = session.customer_details?.email || session.metadata.customerEmail;
+
     try {
-      // Update Firestore slot
+      // 1) Update Firestore
       const slotRef = db.collection('slots').doc(slotId);
       await slotRef.update({
-        status: 'booked',
+        status:       'booked',
         customerName,
         customerPhone,
-        paymentType: 'card',
+        paymentType:  'card',
         serviceType,
-        address: address || '',
-        amount: parseInt(session.metadata.amount, 10),
-        bookedAt: new Date()
+        address:      address || '',
+        amount:       parseInt(amount, 10),
+        bookedAt:     new Date()
       });
 
-      // Prepare emails
-      const msgToCustomer = {
-        to: customerEmail,
-        from: FROM,
-        subject: 'Your barber slot is booked!',
-        text: `Hi ${customerName},\n\n` +
-          `You’re confirmed for ${serviceType === 'atHome' ? 'At‑Home' : 'In‑Shop'} service on ${date} at ${time}.\n\n` +
-          `Thanks for booking!`
-      };
+      // 2) Send confirmation to customer (if we have an email)
+      if (actualEmail) {
+        await sgMail.send({
+          to:      actualEmail,
+          from:    FROM,
+          subject: 'Your barber slot is booked!',
+          text:    `Hi ${customerName},\n\n` +
+                   `You’re confirmed for ${serviceType === 'atHome' ? 'At‑Home' : 'In‑Shop'} service on ${date} at ${time}.\n\n` +
+                   `Thanks for booking!`
+        });
+      } else {
+        console.warn('⚠️ No customer email on session—skipping customer notification');
+      }
 
-      const msgToAdmin = {
-        to: ADMIN_EMAIL,
-        from: FROM,
+      // 3) Notify admin
+      await sgMail.send({
+        to:      ADMIN_EMAIL,
+        from:    FROM,
         subject: `New booking: ${customerName}`,
-        text: `📌 ${customerName} booked ${serviceType === 'atHome' ? 'At‑Home' : 'In‑Shop'} • ${date} @ ${time}\n` +
-          `☎️ ${customerPhone}\n` +
-          `✉️ ${customerEmail}`
-      };
-
-      // Send both
-      await Promise.all([
-        sgMail.send(msgToCustomer),
-        sgMail.send(msgToAdmin)
-      ]);
+        text:    `📌 ${customerName} booked ${serviceType === 'atHome' ? 'At‑Home' : 'In‑Shop'} • ${date} @ ${time}\n` +
+                 `☎️ ${customerPhone}` +
+                 (actualEmail ? `\n✉️ ${actualEmail}` : '')
+      });
 
       console.log(`✅ Booking confirmed and emails sent for ${customerName}`);
-    } catch (error) {
-      console.error('❌ Firebase update or email send failed:', error);
+    } catch (err) {
+      console.error('❌ Firebase update or email send failed:', err);
     }
   }
 
